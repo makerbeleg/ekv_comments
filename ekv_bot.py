@@ -236,6 +236,12 @@ async def handle_query(call: TelebotTypes.CallbackQuery) -> None:
 
     await user_queue.put(call)
 
+    try:
+        await bot.answer_callback_query(call.id)
+
+    except Exception as error:
+        logger.warning(f"Failed to answer callback for {call.id}: {error}")
+
 
 #Per user queue worker for card unsigns
 async def unsign_worker(login_hash: str, queue: asyncio.Queue) -> None:
@@ -286,15 +292,9 @@ async def unsign_worker(login_hash: str, queue: asyncio.Queue) -> None:
         except Exception as error:
             message = f"{card_number}: Oшибка при отзыве подписи"
             logger.warning(f"Failed to unsign: {error}")
-            try:
-                await bot.answer_callback_query(call.id, text=message)
-
-            except Exception as error:
-                logger.warning(f"Failed to answer callback for {call.id}: {error}")
 
         else:
             try:
-                await bot.answer_callback_query(call.id, text=message)
                 await bot.edit_message_text(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -302,7 +302,7 @@ async def unsign_worker(login_hash: str, queue: asyncio.Queue) -> None:
                     reply_markup=None)
 
             except Exception as error:
-                logger.warning(f"Failed to answer callback for {call.id}: {error}")
+                logger.warning(f"Failed to send link for {call.id}: {error}")
 
             if card_number in card:
                 message = response['result_text'] if response else card[card_number]['state']
