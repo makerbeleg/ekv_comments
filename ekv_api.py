@@ -56,6 +56,12 @@ class APIPausedError(Exception): pass
 def api_paused(): return _pause_until > monotonic()
 
 
+async def reset_circuit_breaker():
+    global _error_counter
+    async with _error_lock: _error_counter = 0
+    return True if _error_counter == 0 else False
+
+
 async def manager(load_factor):
     global SLOW_SEMAPHORE, FAST_SEMAPHORE
     global _ERROR_THRESHOLD, _BUCKET_CAPACITY
@@ -67,6 +73,7 @@ async def manager(load_factor):
         low_factor = 1 if load_factor == 1 else (load_factor if 8 <= hour < 22 else 1)
         high_factor = load_factor * 50 if 8 <= hour < 22 else load_factor * 5
 
+        #----------------------
         if (low_factor, high_factor) != last_factors:
             last_factors = (low_factor, high_factor)
             SLOW_SEMAPHORE = asyncio.Semaphore(low_factor)

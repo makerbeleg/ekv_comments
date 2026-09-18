@@ -89,6 +89,7 @@ def sleep_scheduler(start=_SLEEP_START, wakeup=_SLEEP_WAKEUP):
                 if results['reprimands'] > 0: logger.info(f"Purged {results['reprimands']} signed reprimands")
 
                 logger.info(f"Now sleeping till {wakeup_time.strftime('%H:%M')}...")
+                await ekv_api.reset_circuit_breaker()
                 await asyncio.sleep((wakeup_time - now).total_seconds())
 
             return await func(*args, **kwargs)
