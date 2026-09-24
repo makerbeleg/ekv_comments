@@ -89,8 +89,8 @@ def sleep_scheduler(start=_SLEEP_START, wakeup=_SLEEP_WAKEUP):
                 if results['reprimands'] > 0: logger.info(f"Purged {results['reprimands']} signed reprimands")
 
                 logger.info(f"Now sleeping till {wakeup_time.strftime('%H:%M')}...")
-                await ekv_api.reset_circuit_breaker()
                 await asyncio.sleep((wakeup_time - now).total_seconds())
+                await ekv_api.reset_circuit_breaker()
 
             return await func(*args, **kwargs)
         return sleep_wrapper
@@ -220,11 +220,17 @@ async def remove_password_process(message: TelebotTypes.Message) -> None:
 async def handle_query(call: TelebotTypes.CallbackQuery) -> None:
     card_number, login_hash = json.loads(call.data)
     if login_hash not in users_cache:
-        await bot.answer_callback_query(call.id, text="Действие невозможно. Пользователь не найден")
-        await bot.edit_message_reply_markup(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            reply_markup=None)
+        try:
+            await bot.answer_callback_query(call.id, text="Действие невозможно. Пользователь не найден")
+            await bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=call.message.text + ("\n\nДействие невозможно. Пользователь не найден"),
+                reply_markup=None)
+
+        except Exception as error:
+            logger.warning(f"Failed to answer callback/edit message for {call.id}: {error}")
+
         return
 
     if "queue" not in users_cache[login_hash]:
@@ -258,33 +264,37 @@ async def unsign_worker(login_hash: str, queue: asyncio.Queue) -> None:
 
         try:
             card_number = json.loads(call.data)[0]
-            cookies = users_cache[login_hash]['cookies']
 
             #Check for card status before unsign
             #also login if cookies expired/dead session
             async with ekv_api.FAST_SEMAPHORE:
-                card = await fetch_cards(login_hash, [], cookies, card_number=card_number)
+                card = await fetch_cards(login_hash, [], users_cache[login_hash]['cookies'], card_number=card_number)
+
+            cookies = users_cache[login_hash]['cookies'] #updated after fetch_cards
 
             response = None
             card_link = None
             if (card_number in card and                                         #если карта есть и
-                card[card_number]['signature'] and                              #карта подписана и
                 card[card_number]['state'] == "Необработанные комментарии"):    #есть необработанные комментарии
 
-                logger.info(f"Unworked comments on {card_number}. Unsigning")
-                async with ekv_api.FAST_SEMAPHORE:
-                    response = await ekv_api.unsign(card_number, cookies)
+                if card[card_number]['signature']:
+                    logger.info(f"Unworked comments on {card_number}. Unsigning")
+                    async with ekv_api.FAST_SEMAPHORE:
+                        response = await ekv_api.unsign(card_number, cookies)
 
-                if response['result'] is False:
-                    raise AuthenticationError(response['result_text'])
+                    if response['result'] is False:
+                        raise AuthenticationError(response['result_text'])
 
-                message = f"{card_number}: {response['result_text']}."
-                cookies = users_cache[login_hash]['cookies'] #updated after fetch_cards
+                    message = f"{card_number}: {response['result_text']}"
+
+                else:
+                    logger.info(f"Unworked comments on {card_number}. Card was not signed")
+
                 session_key = cookies['ekvSession'].split("=")[1]
                 card_link = f"http://87.245.130.238:19910/#/login-proxy/{session_key}/?from=/karta/{card_number}/sbs"
 
             elif card_number in card:
-                message = f"{card_number}: {card[card_number]['state']}."
+                message = f"{card_number}: {card[card_number]['state']}"
                 logger.info(message)
 
             else:
@@ -299,7 +309,7 @@ async def unsign_worker(login_hash: str, queue: asyncio.Queue) -> None:
                 await bot.edit_message_text(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
-                    text=call.message.text + (f"\n\n{card_link}" if card_link else ""),
+                    text=call.message.text + (f"\n\n{card_link}" if card_link else message),
                     reply_markup=None)
 
             except Exception as error:
