@@ -309,7 +309,7 @@ async def unsign_worker(login_hash: str, queue: asyncio.Queue) -> None:
                 await bot.edit_message_text(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
-                    text=call.message.text + (f"\n\n{card_link}" if card_link else message),
+                    text=call.message.text + (f"\n\n{card_link}" if card_link else f"\n\n{message}"),
                     reply_markup=None)
 
             except Exception as error:
