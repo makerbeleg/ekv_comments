@@ -273,9 +273,8 @@ async def unsign_worker(login_hash: str, queue: asyncio.Queue) -> None:
             cookies = users_cache[login_hash]['cookies'] #updated after fetch_cards
 
             response = None
-            card_link = None
-            if (card_number in card and                                         #если карта есть и
-                card[card_number]['state'] == "Необработанные комментарии"):    #есть необработанные комментарии
+            if (card_number in card and
+                card[card_number]['state'] == "Необработанные комментарии"):
 
                 if card[card_number]['signature']:
                     logger.info(f"Unworked comments on {card_number}. Unsigning")
@@ -285,13 +284,11 @@ async def unsign_worker(login_hash: str, queue: asyncio.Queue) -> None:
                     if response['result'] is False:
                         raise AuthenticationError(response['result_text'])
 
-                    message = f"{card_number}: {response['result_text']}"
-
                 else:
                     logger.info(f"Unworked comments on {card_number}. Card was not signed")
 
                 session_key = cookies['ekvSession'].split("=")[1]
-                card_link = f"http://87.245.130.238:19910/#/login-proxy/{session_key}/?from=/karta/{card_number}/sbs"
+                message = f"http://87.245.130.238:19910/#/login-proxy/{session_key}/?from=/karta/{card_number}/sbs"
 
             elif card_number in card:
                 message = f"{card_number}: {card[card_number]['state']}"
@@ -301,7 +298,6 @@ async def unsign_worker(login_hash: str, queue: asyncio.Queue) -> None:
                 message = f"{card_number}: Карта не найдена"
 
         except Exception as error:
-            message = f"{card_number}: Oшибка при отзыве подписи"
             logger.warning(f"Failed to unsign: {error}")
 
         else:
@@ -309,19 +305,19 @@ async def unsign_worker(login_hash: str, queue: asyncio.Queue) -> None:
                 await bot.edit_message_text(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
-                    text=call.message.text + (f"\n\n{card_link}" if card_link else f"\n\n{message}"),
+                    text=call.message.text + f"\n\n{message}",
                     reply_markup=None)
 
             except Exception as error:
                 logger.warning(f"Failed to send link for {call.id}: {error}")
 
             if card_number in card:
-                message = response['result_text'] if response else card[card_number]['state']
+                log_message = response['result_text'] if response else card[card_number]['state']
 
             else:
-                message = "Карта не найдена"
+                log_message = f"{card_number}: Карта не найдена"
 
-            logger.info(f"Successfully processed a queue item: {card_number}: {message}")
+            logger.info(f"Successfully processed a queue item: {card_number}: {log_message}")
 
         queue.task_done()
 
