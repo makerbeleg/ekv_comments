@@ -225,7 +225,7 @@ async def handle_query(call: TelebotTypes.CallbackQuery) -> None:
             await bot.edit_message_text(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
-                text=call.message.text + ("\n\nДействие невозможно. Пользователь не найден"),
+                text=call.message.text + "\n\nДействие невозможно. Пользователь не найден",
                 reply_markup=None)
 
         except Exception as error:
@@ -292,7 +292,6 @@ async def unsign_worker(login_hash: str, queue: asyncio.Queue) -> None:
 
             elif card_number in card:
                 message = f"{card_number}: {card[card_number]['state']}"
-                logger.info(message)
 
             else:
                 message = f"{card_number}: Карта не найдена"
@@ -359,7 +358,7 @@ def authentication(func):
                     else:
                         users_cache[login_hash] = {'cookies': cookies, 'expires': expires}
 
-                logger.info(f"Updated cookies for user")
+                logger.info("Updated cookies for user")
 
                 response_path = response['response']['path']
                 while response_path in ("ConfirmUnworkedComments.aspx", "ConfirmUnworkedReprimands.aspx"):
@@ -403,7 +402,7 @@ async def add_user(chat_id: int, login: str, password: str) -> dict[str, str]:
             else:
                 users_cache[login_hash] = {'chat_ids': user_ids}
 
-        logger.info(f"Updated telegram ids for user")
+        logger.info("Updated telegram ids for user")
         return {'response': f"Пользователь {login} добавлен.", 'login': login_hash}
 
     async with ekv_api.SLOW_SEMAPHORE:
@@ -451,7 +450,7 @@ async def remove_user(chat_id: int, login: str, password: str) -> dict[str, str]
         result = await ekv_db.update_user(login_hash, chat_ids=user_ids)
         async with LOCK: users_cache[login_hash]['chat_ids'] = user_ids
 
-        logger.info(f"Removed telegram ids for user")
+        logger.info("Removed telegram ids for user")
         return {'response': f"Пользователь {login} удален.", 'login': login}
 
     else:
