@@ -73,7 +73,6 @@ async def manager(load_factor):
         low_factor = 1 if load_factor == 1 else (load_factor if 8 <= hour < 22 else 1)
         high_factor = load_factor * 50 if 8 <= hour < 22 else load_factor * 5
 
-        #----------------------
         if (low_factor, high_factor) != last_factors:
             last_factors = (low_factor, high_factor)
             SLOW_SEMAPHORE = asyncio.Semaphore(low_factor)
@@ -192,10 +191,9 @@ def _circuit_breaker(func):
                     _pause_until = monotonic() + _API_PAUSE_DURATION
                     logger.error(f"Error threshold {_ERROR_THRESHOLD} reached. Paused for {_API_PAUSE_DURATION}s")
 
-            else:
-                if _error_counter > 0:
-                    async with _error_lock: _error_counter = _error_counter - 1
-                    logger.info(f"Error count decreased to {_error_counter}")
+            elif _error_counter > 0:
+                async with _error_lock: _error_counter = _error_counter - 1
+                logger.info(f"Error count decreased to {_error_counter}")
 
             return response
     return breaker_wrapper
@@ -234,8 +232,8 @@ async def _call_api(dest, payload, cookies=None):
 
 @_async_retry()
 async def login(login_hash, password_hash, cookies=None):
-    def _bigEndian_sha1(data):
-        data = bytes.fromhex(data)
+    def _bigEndian_sha1(_hash):
+        data = bytes.fromhex(_hash)
         return list(struct.unpack('>5i', data))
 
     login_list = _bigEndian_sha1(login_hash)

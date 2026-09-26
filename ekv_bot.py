@@ -535,12 +535,11 @@ async def fetch_cards(login_hash: str, chat_ids: list[int], cookies: dict[str, s
             logger.info(f"Updated user with 'date' set to {new_date}")
         return {}
 
-    else:
-        if not card_number:
-            result = await ekv_db.update_user(login_hash, date="")
-            async with LOCK:
-                if login_hash in users_cache:
-                    users_cache[login_hash]['date'] = None
+    elif not card_number:
+        result = await ekv_db.update_user(login_hash, date="")
+        async with LOCK:
+            if login_hash in users_cache:
+                users_cache[login_hash]['date'] = None
 
     logger.info(f"Fetched {len(cards_responses['items'])} cards")
 
