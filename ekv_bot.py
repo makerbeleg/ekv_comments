@@ -336,7 +336,7 @@ def authentication(func):
             except AuthenticationError as error:
                 logger.info(f"{func.__name__} returned: {error}. (attempt {attempt}/{_RETRY_ATTEMPTS})")
 
-                user = await ekv_db.get_user(login=login_hash)
+                user = await ekv_db.get_user(login_hash=login_hash)
                 if not user:
                     raise ValueError("User was not found in ekv_db")
 
@@ -384,7 +384,7 @@ async def add_user(chat_id: int, login: str, password: str) -> dict[str, str]:
     login_hash = hashlib.sha1(login.encode("utf-8")).hexdigest()
     password_hash = hashlib.sha1(password.encode("utf-8")).hexdigest()
 
-    user_exists = await ekv_db.get_user(login=login_hash)
+    user_exists = await ekv_db.get_user(login_hash=login_hash)
     if user_exists:
         if user_exists[login_hash]['password'] != password_hash:
             return {'response': "Пользователь не найден или неверный пароль.", 'login': None}
@@ -437,7 +437,7 @@ async def add_user(chat_id: int, login: str, password: str) -> dict[str, str]:
 async def remove_user(chat_id: int, login: str, password: str) -> dict[str, str]:
     login_hash = hashlib.sha1(login.encode("utf-8")).hexdigest()
     password_hash = hashlib.sha1(password.encode("utf-8")).hexdigest()
-    user_exists = await ekv_db.get_user(login=login_hash)
+    user_exists = await ekv_db.get_user(login_hash=login_hash)
 
     if (not user_exists or
             user_exists[login_hash]['password'] != password_hash):

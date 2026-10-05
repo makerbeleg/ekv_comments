@@ -37,7 +37,7 @@ _LEAK_RATE_MULTIPLIER = int(os.getenv("LEAK_RATE_MULTIPLIER", 5)) #seconds
 _API_PAUSE_DURATION = int(os.getenv("PAUSE_DURATION", 3600)) #seconds
 _SLOW_THRESHOLD = float(os.getenv("SLOW_THRESHOLD", 1.0)) #seconds
 _ERROR_THRESHOLD_MULTIPLIER = int(os.getenv("ERROR_THRESHOLD_MULTIPLIER", 2))
-_CYCLE = int(os.getenv("CYCLE", 180)) #seconds
+_CYCLE = int(os.getenv("CYCLE", 300)) #seconds
 
 _error_lock = asyncio.Lock()
 _error_counter, _pause_until = 0, 0
