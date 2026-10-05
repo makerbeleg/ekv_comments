@@ -3,6 +3,7 @@ import os
 import dotenv
 import logging
 import json
+import asyncio
 import aiosqlite
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -23,49 +24,54 @@ logging.basicConfig(
         logging.StreamHandler()
     ])
 
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS users (
+    chat_ids TEXT,
+    login TEXT PRIMARY KEY,
+    password TEXT,
+    cookies TEXT,
+    expires INTEGER,
+    session TEXT,
+    date TEXT);
+CREATE TABLE IF NOT EXISTS comments (
+    card_number INTEGER PRIMARY KEY,
+    owner TEXT,
+    dt TEXT);
+CREATE TABLE IF NOT EXISTS reprimands (
+    card_number INTEGER PRIMARY KEY,
+    signature TEXT,
+    owner TEXT,
+    dt TEXT);
+"""
+
 _connection = None
-
-
-
-async def _get_connection():
-    global _connection
-    if _connection is None:
-        _connection = await aiosqlite.connect(EKV_DB)
-        _connection.row_factory = aiosqlite.Row
-
-        await _connection.execute("""CREATE TABLE IF NOT EXISTS users (
-            chat_ids TEXT,
-            login TEXT PRIMARY KEY,
-            password TEXT,
-            cookies TEXT,
-            expires INTEGER,
-            session TEXT,
-            date TEXT)""")
-        await _connection.execute("""CREATE TABLE IF NOT EXISTS comments (
-            card_number INTEGER PRIMARY KEY,
-            owner TEXT,
-            dt TEXT)""")
-        await _connection.execute("""CREATE TABLE IF NOT EXISTS reprimands (
-            card_number INTEGER PRIMARY KEY,
-            signature TEXT,
-            owner TEXT,
-            dt TEXT)""")
-
-        await _connection.commit()
-    return _connection
+_db_lock = asyncio.Lock()
 
 
 @asynccontextmanager
-async def _db_connection():
-    connection = await _get_connection()
+async def _db_connection(write=False):
+    global _connection
 
-    try:
-        yield connection
-        await connection.commit()
+    async with _db_lock:
+        if _connection is None:
+            _connection = await aiosqlite.connect(EKV_DB)
+            _connection.row_factory = aiosqlite.Row
+            await _connection.execute("PRAGMA journal_mode = WAL")
+            await _connection.executescript(_SCHEMA)
+            await _connection.commit()
 
-    except BaseException:
-        await connection.rollback()
-        raise
+    if not write:
+        yield _connection
+        return
+
+    async with _db_lock:
+        try:
+            yield _connection
+            await _connection.commit()
+    
+        except BaseException:
+            await _connection.rollback()
+            raise
 
 
 async def get_user(login_hash=None):
@@ -75,7 +81,7 @@ async def get_user(login_hash=None):
     else:
         query, parameters = """SELECT * FROM users""", ()
 
-    async with _db_connection() as connection, connection.execute(query, parameters) as cursor:
+    async with _db_connection(write=False) as connection, connection.execute(query, parameters) as cursor:
         rows = [await cursor.fetchone()] if login_hash else await cursor.fetchall()
 
     results = {}
@@ -96,7 +102,7 @@ async def active_users():
 
     parameters = (datetime.now().strftime("%Y-%m-%d %H:%M:%S"),)
 
-    async with _db_connection() as connection, connection.execute(query, parameters) as cursor:
+    async with _db_connection(write=False) as connection, connection.execute(query, parameters) as cursor:
         row = await cursor.fetchone()
         return row[0] if row else 0
 
@@ -114,7 +120,7 @@ async def add_user(chat_id, login_hash, password_hash, cookies, expires):
         'expires': expires
         }
 
-    async with _db_connection() as connection, connection.execute(query, parameters) as cursor:
+    async with _db_connection(write=True) as connection, connection.execute(query, parameters) as cursor:
         return cursor.rowcount
 
 
@@ -134,14 +140,14 @@ async def update_user(login_hash, password=None, chat_ids=None, cookies=None, ex
     query = f"""UPDATE users SET {columns} WHERE login = ?"""
     parameters = tuple(updates.values()) + (login_hash,)
 
-    async with _db_connection() as connection, connection.execute(query, parameters) as cursor:
+    async with _db_connection(write=True) as connection, connection.execute(query, parameters) as cursor:
         return cursor.rowcount
 
 
 async def remove_user(login_hash):
     query, parameters = """DELETE FROM users WHERE login = ?""", (login_hash,)
 
-    async with _db_connection() as connection, connection.execute(query, parameters) as cursor:
+    async with _db_connection(write=True) as connection, connection.execute(query, parameters) as cursor:
         return cursor.rowcount
 
 
@@ -149,7 +155,7 @@ async def get_from_db(table="comments"):
     if table == "reprimands": query = """SELECT * FROM reprimands"""
     elif table == "comments": query = """SELECT * FROM comments"""
 
-    async with _db_connection() as connection, connection.execute(query) as cursor:
+    async with _db_connection(write=False) as connection, connection.execute(query) as cursor:
         rows = await cursor.fetchall()
 
     results = {}
@@ -183,7 +189,7 @@ async def save_to_db(items_list, table="comments"):
 
         rows.append(parameters)
 
-    async with _db_connection() as connection, connection.executemany(query, rows) as cursor:
+    async with _db_connection(write=True) as connection, connection.executemany(query, rows) as cursor:
         return cursor.rowcount
 
 
@@ -198,10 +204,10 @@ async def cleanup(card_number=None):
         WHERE signature IS NOT NULL AND signature != ''"""
 
     if card_number is not None:
-        async with _db_connection() as connection, connection.execute(query_cn, parameters) as cursor_cn:
+        async with _db_connection(write=True) as connection, connection.execute(query_cn, parameters) as cursor_cn:
             return {'comments': cursor_cn.rowcount}
 
-    async with (_db_connection() as connection,
+    async with (_db_connection(write=True) as connection,
                 connection.execute(query_c) as cursor_c,
                 connection.execute(query_r) as cursor_r):
         return {'comments': cursor_c.rowcount, 'reprimands': cursor_r.rowcount}
