@@ -32,13 +32,10 @@ TelebotLogger.setLevel(logging.WARNING)
 logger = logging.getLogger("ekv_bot")
 logging.basicConfig(
     level=logging.INFO,
-    force=True,
     style="{",
     format="{name}: {message}",
-    handlers=[
-        logging.FileHandler(LOG_FILE),
-        logging.StreamHandler()
-    ])
+    handlers=[logging.FileHandler(LOG_FILE), logging.StreamHandler()]
+    )
 
 try:
     EKV_TOKEN = os.environ['EKV_BOT_TOKEN']
