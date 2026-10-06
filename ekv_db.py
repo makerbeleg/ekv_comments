@@ -11,18 +11,8 @@ from datetime import datetime
 dotenv.load_dotenv()
 
 EKV_DB = os.getenv("EKV_DB", "EKV_DATABASE.db")
-LOG_FILE = os.getenv("LOG_FILE", "ekv_bot.log")
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(
-    level=logging.INFO,
-    force=True,
-    style="{",
-    format="{name}: {message}",
-    handlers=[
-        logging.FileHandler(LOG_FILE),
-        logging.StreamHandler()
-    ])
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -205,7 +195,7 @@ async def cleanup(card_number=None):
 
     if card_number is not None:
         async with _db_connection(write=True) as connection, connection.execute(query_cn, parameters) as cursor_cn:
-            return {'comments': cursor_cn.rowcount}
+            return {'comments': cursor_cn.rowcount, 'reprimands': 0}
 
     async with (_db_connection(write=True) as connection,
                 connection.execute(query_c) as cursor_c,

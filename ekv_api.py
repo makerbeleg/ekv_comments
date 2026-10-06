@@ -14,17 +14,7 @@ from time import monotonic
 
 dotenv.load_dotenv()
 
-LOG_FILE = os.getenv("LOG_FILE", "ekv_bot.log")
 logger = logging.getLogger(__name__)
-logging.basicConfig(
-    level=logging.INFO,
-    force=True,
-    style="{",
-    format="{name}: {message}",
-    handlers=[
-        logging.FileHandler(LOG_FILE),
-        logging.StreamHandler()
-    ])
 
 _opener = httpx.AsyncClient(
     timeout=httpx.Timeout(10.0),
@@ -158,7 +148,7 @@ async def _leaky_bucket():
 
 def _circuit_breaker(func):
     @wraps(func)
-    async def breaker_wrapper(dest, payload, cookies):
+    async def breaker_wrapper(dest, payload, cookies=None):
         global _error_counter, _pause_until
 
         if _pause_until > monotonic() and payload['method'] != "removeSignature":
