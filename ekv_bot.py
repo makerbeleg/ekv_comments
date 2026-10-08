@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
-import os
 import dotenv
+import os
 import logging
 import hashlib
 import json
@@ -21,11 +21,11 @@ from telebot.async_telebot import AsyncTeleBot
 from telebot.asyncio_storage import StateMemoryStorage
 from telebot.asyncio_handler_backends import State, StatesGroup
 
+dotenv.load_dotenv()
+
 if not os.path.exists(".env"):
     with open(".env", "w", encoding="utf-8") as file:
         file.write("# EKV_BOT_TOKEN=\n")
-
-dotenv.load_dotenv()
 
 LOG_FILE = os.getenv("LOG_FILE", "ekv_bot.log")
 TelebotLogger.setLevel(logging.WARNING)
@@ -477,15 +477,9 @@ async def fetch_new_diagnoses(item_list: dict[int, dict]) -> dict[int, dict]:
     return item_list
 
 
-@authentication
-async def fetch_cards(login_hash: str, chat_ids: list[int], cookies: dict[str, str], card_number: int = None) -> dict[int, dict]:
-    async with ekv_api.SLOW_SEMAPHORE:
-        cards_responses = await ekv_api.fetch_cards(cookies=cookies, card_number=card_number, draw_attention=False)
-        if not card_number:
-            await asyncio.sleep((5 + random.uniform(0.5, 2)) / _LOAD_FACTOR)
-
-    #Set a 3 hour cooldown if dead session
-    if "items" not in cards_responses or len(cards_responses['items']) == 0:
+async def session_state(login_hash, response, cards_response, card_number=None):
+    if ("items" not in response or 
+        cards_response and len(response['items']) == 0):
         now = datetime.now()
         if now.timestamp() <= users_cache[login_hash]['expires']:
             if users_cache[login_hash].get("session", "unverified") == "unverified" and not card_number:
@@ -500,18 +494,31 @@ async def fetch_cards(login_hash: str, chat_ids: list[int], cookies: dict[str, s
                         users_cache[login_hash]['session'] = "sleep"
 
                 logger.info(f"Updated user with 'date' set to {new_time}")
-                return {}
+                return True
 
             if (users_cache[login_hash]['session'] == "sleep" or
-                (card_number and users_cache[login_hash]['session'] != "verified")):
+                card_number and users_cache[login_hash]['session'] != "verified"):
 
                 result = await ekv_db.update_user(login_hash, session="verified")
                 async with LOCK: users_cache[login_hash]['session'] = "verified"
                 raise AuthenticationError("No items in 'items' of cards response. "
-                    f"{cards_responses['result_text']}")
+                    f"{response['result_text']}")
 
     result = await ekv_db.update_user(login_hash, session="unverified")
     async with LOCK: users_cache[login_hash]['session'] = "unverified"
+    return False
+
+
+@authentication
+async def fetch_cards(login_hash: str, chat_ids: list[int], cookies: dict[str, str], card_number: int = None) -> dict[int, dict]:
+    async with ekv_api.SLOW_SEMAPHORE:
+        cards_responses = await ekv_api.fetch_cards(cookies=cookies, card_number=card_number, draw_attention=False)
+        if not card_number:
+            await asyncio.sleep((5 + random.uniform(0.5, 2)) / _LOAD_FACTOR)
+
+    #Set a 3 hour cooldown if dead session
+    cooldown = await session_state(login_hash, cards_responses, cards_response=True, card_number=card_number)
+    if cooldown: return {}
 
     #If there are no cards or all are approved then set cooldown till nextday _SCHEDULE_TIME
     if (len(cards_responses['items']) == 0 or
@@ -566,31 +573,8 @@ async def fetch_reprimands(login_hash: str, chat_ids: list[int], cookies: dict[s
         await asyncio.sleep((5 + random.uniform(0.5, 2)) / _LOAD_FACTOR)
 
     #Set a 3 hour cooldown if dead session
-    if "items" not in reps_responses:
-        now = datetime.now()
-        if now.timestamp() <= users_cache[login_hash]['expires']:
-            if users_cache[login_hash].get("session", "unverified") == "unverified":
-                new_time = now + timedelta(hours=3)
-                result = await ekv_db.update_user(login_hash,
-                    date=new_time.strftime("%Y-%m-%d %H:%M:%S"),
-                    session="sleep")
-
-                async with LOCK:
-                    if login_hash in users_cache:
-                        users_cache[login_hash]['date'] = new_time.strftime("%Y-%m-%d %H:%M:%S")
-                        users_cache[login_hash]['session'] = "sleep"
-
-                logger.info(f"Updated user with 'date' set to {new_time}")
-                return {}
-
-            if users_cache[login_hash]['session'] == "sleep":
-                result = await ekv_db.update_user(login_hash, session="verified")
-                async with LOCK: users_cache[login_hash]['session'] = "verified"
-                raise AuthenticationError("No 'items' in reprimands response. "
-                    f"{reps_responses['result_text']}")
-
-    result = await ekv_db.update_user(login_hash, session="unverified")
-    async with LOCK: users_cache[login_hash]['session'] = "unverified"
+    cooldown = await session_state(login_hash, reps_responses, cards_response=False)
+    if cooldown: return {}
 
     logger.info(f"Fetched {len(reps_responses['items'])} reprimands")
 

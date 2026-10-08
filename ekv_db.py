@@ -1,6 +1,6 @@
 
-import os
 import dotenv
+import os
 import logging
 import json
 import asyncio
@@ -8,11 +8,11 @@ import aiosqlite
 from contextlib import asynccontextmanager
 from datetime import datetime
 
+logger = logging.getLogger(__name__)
+
 dotenv.load_dotenv()
 
 EKV_DB = os.getenv("EKV_DB", "EKV_DATABASE.db")
-
-logger = logging.getLogger(__name__)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -39,7 +39,7 @@ _db_lock = asyncio.Lock()
 
 
 @asynccontextmanager
-async def _db_connection(write=False):
+async def _db_connection(*, write=False):
     global _connection
 
     async with _db_lock:
@@ -71,8 +71,9 @@ async def get_user(login_hash=None):
     else:
         query, parameters = """SELECT * FROM users""", ()
 
-    async with _db_connection(write=False) as connection, connection.execute(query, parameters) as cursor:
-        rows = [await cursor.fetchone()] if login_hash else await cursor.fetchall()
+    async with _db_connection(write=False) as connection:
+        async with connection.execute(query, parameters) as cursor:
+            rows = [await cursor.fetchone()] if login_hash else await cursor.fetchall()
 
     results = {}
     for row in rows:
@@ -92,9 +93,10 @@ async def active_users():
 
     parameters = (datetime.now().strftime("%Y-%m-%d %H:%M:%S"),)
 
-    async with _db_connection(write=False) as connection, connection.execute(query, parameters) as cursor:
-        row = await cursor.fetchone()
-        return row[0] if row else 0
+    async with _db_connection(write=False) as connection:
+        async with connection.execute(query, parameters) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0
 
 
 async def add_user(chat_id, login_hash, password_hash, cookies, expires):
@@ -110,8 +112,9 @@ async def add_user(chat_id, login_hash, password_hash, cookies, expires):
         'expires': expires
         }
 
-    async with _db_connection(write=True) as connection, connection.execute(query, parameters) as cursor:
-        return cursor.rowcount
+    async with _db_connection(write=True) as connection:
+        async with connection.execute(query, parameters) as cursor:
+            return cursor.rowcount
 
 
 async def update_user(login_hash, password=None, chat_ids=None, cookies=None, expires=None, session=None, date=None):
@@ -130,23 +133,26 @@ async def update_user(login_hash, password=None, chat_ids=None, cookies=None, ex
     query = f"""UPDATE users SET {columns} WHERE login = ?"""
     parameters = tuple(updates.values()) + (login_hash,)
 
-    async with _db_connection(write=True) as connection, connection.execute(query, parameters) as cursor:
-        return cursor.rowcount
+    async with _db_connection(write=True) as connection:
+        async with connection.execute(query, parameters) as cursor:
+            return cursor.rowcount
 
 
 async def remove_user(login_hash):
     query, parameters = """DELETE FROM users WHERE login = ?""", (login_hash,)
 
-    async with _db_connection(write=True) as connection, connection.execute(query, parameters) as cursor:
-        return cursor.rowcount
+    async with _db_connection(write=True) as connection:
+        async with connection.execute(query, parameters) as cursor:
+            return cursor.rowcount
 
 
 async def get_from_db(table="comments"):
     if table == "reprimands": query = """SELECT * FROM reprimands"""
     elif table == "comments": query = """SELECT * FROM comments"""
 
-    async with _db_connection(write=False) as connection, connection.execute(query) as cursor:
-        rows = await cursor.fetchall()
+    async with _db_connection(write=False) as connection:
+        async with connection.execute(query) as cursor:
+            rows = await cursor.fetchall()
 
     results = {}
     for row in rows:
@@ -179,8 +185,9 @@ async def save_to_db(items_list, table="comments"):
 
         rows.append(parameters)
 
-    async with _db_connection(write=True) as connection, connection.executemany(query, rows) as cursor:
-        return cursor.rowcount
+    async with _db_connection(write=True) as connection:
+        async with connection.executemany(query, rows) as cursor:
+            return cursor.rowcount
 
 
 async def cleanup(card_number=None):
@@ -193,20 +200,22 @@ async def cleanup(card_number=None):
     query_r = """DELETE FROM reprimands
         WHERE signature IS NOT NULL AND signature != ''"""
 
-    if card_number is not None:
-        async with _db_connection(write=True) as connection, connection.execute(query_cn, parameters) as cursor_cn:
-            return {'comments': cursor_cn.rowcount, 'reprimands': 0}
+    async with _db_connection(write=True) as connection:
+        if card_number is not None:
+            async with connection.execute(query_cn, parameters) as cursor_cn:
+                return {'comments': cursor_cn.rowcount, 'reprimands': 0}
 
-    async with (_db_connection(write=True) as connection,
-                connection.execute(query_c) as cursor_c,
-                connection.execute(query_r) as cursor_r):
-        return {'comments': cursor_c.rowcount, 'reprimands': cursor_r.rowcount}
+        async with (connection.execute(query_c) as cursor_c,
+                    connection.execute(query_r) as cursor_r):
+            return {'comments': cursor_c.rowcount, 'reprimands': cursor_r.rowcount}
 
 
 async def close_database():
     global _connection
 
     if _connection:
-        await _connection.close()
+        async with _db_lock:
+            await _connection.close()
+
         logger.info("DB connection was closed")
         _connection = None

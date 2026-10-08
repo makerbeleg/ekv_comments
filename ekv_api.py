@@ -1,6 +1,6 @@
 
-import os
 import dotenv
+import os
 import logging
 import struct
 import json
@@ -12,9 +12,9 @@ from functools import wraps
 from datetime import datetime, date, timedelta
 from time import monotonic
 
-dotenv.load_dotenv()
-
 logger = logging.getLogger(__name__)
+
+dotenv.load_dotenv()
 
 _opener = httpx.AsyncClient(
     timeout=httpx.Timeout(10.0),
