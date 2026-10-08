@@ -1,5 +1,4 @@
 
-import dotenv
 import os
 import logging
 import struct
@@ -13,8 +12,6 @@ from datetime import datetime, date, timedelta
 from time import monotonic
 
 logger = logging.getLogger(__name__)
-
-dotenv.load_dotenv()
 
 _opener = httpx.AsyncClient(
     timeout=httpx.Timeout(10.0),

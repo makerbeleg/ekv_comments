@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 
 import dotenv
+dotenv.load_dotenv()
+
 import os
 import logging
 import hashlib
@@ -20,8 +22,6 @@ from telebot.apihelper import ApiTelegramException
 from telebot.async_telebot import AsyncTeleBot
 from telebot.asyncio_storage import StateMemoryStorage
 from telebot.asyncio_handler_backends import State, StatesGroup
-
-dotenv.load_dotenv()
 
 if not os.path.exists(".env"):
     with open(".env", "w", encoding="utf-8") as file:

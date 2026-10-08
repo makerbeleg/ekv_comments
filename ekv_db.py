@@ -1,5 +1,4 @@
 
-import dotenv
 import os
 import logging
 import json
@@ -9,8 +8,6 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
-
-dotenv.load_dotenv()
 
 EKV_DB = os.getenv("EKV_DB", "EKV_DATABASE.db")
 
@@ -34,33 +31,35 @@ CREATE TABLE IF NOT EXISTS reprimands (
     dt TEXT);
 """
 
-_connection = None
+_writer = None
 _db_lock = asyncio.Lock()
 
 
 @asynccontextmanager
 async def _db_connection(*, write=False):
-    global _connection
+    global _writer
 
     async with _db_lock:
-        if _connection is None:
-            _connection = await aiosqlite.connect(EKV_DB)
-            _connection.row_factory = aiosqlite.Row
-            await _connection.execute("PRAGMA journal_mode = WAL")
-            await _connection.executescript(_SCHEMA)
-            await _connection.commit()
+        if _writer is None:
+            _writer = await aiosqlite.connect(EKV_DB)
+            _writer.row_factory = aiosqlite.Row
+            await _writer.execute("PRAGMA journal_mode = WAL")
+            await _writer.executescript(_SCHEMA)
+            await _writer.commit()
 
     if not write:
-        yield _connection
+        async with aiosqlite.connect(EKV_DB) as reader:
+            reader.row_factory = aiosqlite.Row
+            yield reader
         return
 
     async with _db_lock:
         try:
-            yield _connection
-            await _connection.commit()
+            yield _writer
+            await _writer.commit()
     
         except BaseException:
-            await _connection.rollback()
+            await _writer.rollback()
             raise
 
 
@@ -211,11 +210,11 @@ async def cleanup(card_number=None):
 
 
 async def close_database():
-    global _connection
+    global _writer
 
-    if _connection:
-        async with _db_lock:
-            await _connection.close()
+    async with _db_lock:
+        if _writer:
+            await _writer.close()
+            logger.info("DB connection was closed")
 
-        logger.info("DB connection was closed")
-        _connection = None
+        _writer = None
