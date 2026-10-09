@@ -39,13 +39,14 @@ _db_lock = asyncio.Lock()
 async def _db_connection(*, write=False):
     global _writer
 
-    async with _db_lock:
-        if _writer is None:
-            _writer = await aiosqlite.connect(EKV_DB)
-            _writer.row_factory = aiosqlite.Row
-            await _writer.execute("PRAGMA journal_mode = WAL")
-            await _writer.executescript(_SCHEMA)
-            await _writer.commit()
+    if _writer is None:
+        async with _db_lock:
+            if _writer is None:
+                _writer = await aiosqlite.connect(EKV_DB)
+                _writer.row_factory = aiosqlite.Row
+                await _writer.execute("PRAGMA journal_mode = WAL")
+                await _writer.executescript(_SCHEMA)
+                await _writer.commit()
 
     if not write:
         async with aiosqlite.connect(EKV_DB) as reader:
