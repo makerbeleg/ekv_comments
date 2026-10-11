@@ -701,7 +701,7 @@ async def fetcher(delay: int) -> None:
 
         result_r, result_sr = await asyncio.gather(
             ekv_db.save_to_db(reprimands_new_diag, table="reprimands"),
-            ekv_db.save_to_db(signed_reprimands, table="reprimands"))
+            ekv_db.save_to_db(signed_reprimands, table="reprimands", signed=True))
 
         if result_r > 0: logger.info(f"Saved {result_r} new reprimands to db")
         if result_sr > 0: logger.info(f"Updated {result_sr} signed reprimands to db")

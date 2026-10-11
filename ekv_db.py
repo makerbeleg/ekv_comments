@@ -164,7 +164,7 @@ async def get_from_db(table="comments"):
     return results
 
 
-async def save_to_db(items_list, table="comments"):
+async def save_to_db(items_list, table="comments", signed=False):
     if table == "reprimands":
         query = """INSERT INTO reprimands (card_number, signature, owner, dt)
             VALUES (:card_number, :signature, :owner, :dt)
@@ -177,9 +177,16 @@ async def save_to_db(items_list, table="comments"):
             ON CONFLICT(card_number) DO NOTHING"""
 
     rows = []
-    for card_number, details in items_list.items():
-        dt = datetime.strptime(details['dt'], "%d.%m.%Y %H:%M")
-        parameters = {'card_number': card_number, 'owner': details['owner'], 'dt': dt.strftime("%Y-%m-%d")}
+    dt_format = "%Y-%m-%d" if signed else "%d.%m.%Y %H:%M"
+    for card_number, details in items_list.items(): 
+        dt = datetime.strptime(details['dt'], dt_format)
+
+        parameters = {
+            'card_number': card_number,
+            'owner': details['owner'],
+            'dt': dt.strftime("%Y-%m-%d")
+            }
+
         if table == "reprimands":
             parameters['signature'] = details['signature']
 
