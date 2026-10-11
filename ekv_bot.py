@@ -9,9 +9,9 @@ import hashlib
 import json
 import ekv_api, ekv_db
 import asyncio
-import httpx
 import random
 import sys
+from httpx import ConnectError, TimeoutException
 from functools import wraps
 from collections.abc import Callable
 from datetime import datetime, timedelta
@@ -779,7 +779,7 @@ async def main():
             try:
                 await bot.infinity_polling(skip_pending=True)
 
-            except (httpx.ConnectError, httpx.TimeoutException) as error:
+            except (ConnectError, TimeoutException) as error:
                 logger.warning(f"Polling failed: {error}. Reconnecting...")
                 await asyncio.sleep(5)
 
