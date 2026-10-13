@@ -148,7 +148,9 @@ def _circuit_breaker(func):
     async def breaker_wrapper(dest, payload, cookies=None):
         global _error_counter, _pause_until
 
-        if _pause_until > monotonic() and payload['method'] != "removeSignature":
+        card_number = payload['data'][4]['value'] if 'data' in payload else ""
+        bypass = payload['method'] == "removeSignature" or bool(card_number)
+        if _pause_until > monotonic() and not bypass:
             raise APIPausedError(f"API paused for {(_pause_until - monotonic()) / 60:.1f}m")
 
         if _ERROR_THRESHOLD > 2 and (_ERROR_THRESHOLD / 2 <= _error_counter < _ERROR_THRESHOLD):
@@ -315,4 +317,3 @@ async def unsign(card_number, cookies):
 async def close_connection():
     await _opener.aclose()
     logger.info("Opener was closed")
-
