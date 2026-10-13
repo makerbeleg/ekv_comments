@@ -43,12 +43,10 @@ class APIPausedError(Exception): pass
 def api_paused(): return _pause_until > monotonic()
 
 
-
 def _get_lock():
     global _error_lock
     _error_lock = _error_lock or asyncio.Lock()
     return _error_lock
-
 
 
 async def reset_circuit_breaker():

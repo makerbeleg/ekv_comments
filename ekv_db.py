@@ -227,7 +227,7 @@ async def cleanup(card_number=None):
 async def close_database():
     global _writer
 
-    async with _get_db_lock:
+    async with _get_db_lock():
         if _writer:
             await _writer.close()
             logger.info("DB connection was closed")
