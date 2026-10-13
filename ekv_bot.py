@@ -47,7 +47,7 @@ bot.add_custom_filter(asyncio_filters.StateFilter(bot))
 
 users_cache = {}
 message_queue = None
-LOCK = asyncio.Lock()
+_LOCK = None
 _LOAD_FACTOR = 1
 _CYCLE = int(os.getenv("CYCLE", 300)) #seconds
 _SCHEDULE_TIME = [int(x) for x in os.getenv("SCHEDULE_TIME", "15:00").split(":")]
@@ -67,6 +67,12 @@ class Registration(StatesGroup):
     password_state = State()
     remove_login_state = State()
     remove_password_state = State()
+
+
+def _get_lock():
+    global _LOCK
+    _LOCK = _LOCK or asyncio.Lock()
+    return _LOCK
 
 
 def sleep_scheduler(start=_SLEEP_START, wakeup=_SLEEP_WAKEUP):
@@ -255,7 +261,7 @@ async def unsign_worker(login_hash: str, queue: asyncio.Queue) -> None:
             logger.info(f"Received {json.loads(call.data)[0]} from a queue")
 
         except asyncio.TimeoutError:
-            async with LOCK: users_cache[login_hash].pop("queue")
+            async with _get_lock(): users_cache[login_hash].pop("queue")
             logger.info("Queue was empty for 60 seconds. Destroyed")
             break
 
@@ -325,7 +331,7 @@ def authentication(func):
             try:
                 if datetime.now().timestamp() >= users_cache[login_hash]['expires']:
                     result = await ekv_db.update_user(login_hash, session="verified")
-                    async with LOCK: users_cache[login_hash]['session'] = "verified"
+                    async with _get_lock(): users_cache[login_hash]['session'] = "verified"
                     raise AuthenticationError(f"Session expired for {login_hash}")
 
                 return await func(login_hash, chat_ids, cookies, **kwargs)
@@ -347,7 +353,7 @@ def authentication(func):
                 cookies, expires = response['cookies'], response['expires']
 
                 result = await ekv_db.update_user(login_hash, cookies=cookies, expires=expires)
-                async with LOCK:
+                async with _get_lock():
                     if login_hash in users_cache:
                         users_cache[login_hash]['cookies'] = cookies
                         users_cache[login_hash]['expires'] = expires
@@ -392,7 +398,7 @@ async def add_user(chat_id: int, login: str, password: str) -> dict[str, str]:
 
         user_ids.append(chat_id)
         result = await ekv_db.update_user(login_hash, chat_ids=user_ids)
-        async with LOCK:
+        async with _get_lock():
             if login_hash in users_cache:
                 users_cache[login_hash]['chat_ids'] = user_ids
 
@@ -419,7 +425,7 @@ async def add_user(chat_id: int, login: str, password: str) -> dict[str, str]:
         response['cookies'],
         response['expires'])
 
-    async with LOCK:
+    async with _get_lock():
         users_cache[login_hash] = {
             'chat_ids': [chat_id],
             'password': password_hash,
@@ -445,14 +451,14 @@ async def remove_user(chat_id: int, login: str, password: str) -> dict[str, str]
         user_ids.remove(chat_id)
 
         result = await ekv_db.update_user(login_hash, chat_ids=user_ids)
-        async with LOCK: users_cache[login_hash]['chat_ids'] = user_ids
+        async with _get_lock(): users_cache[login_hash]['chat_ids'] = user_ids
 
         logger.info("Removed telegram ids for user")
         return {'response': f"Пользователь {login} удален.", 'login': login}
 
     else:
         result = await ekv_db.remove_user(login_hash)
-        async with LOCK: users_cache.pop(login_hash)
+        async with _get_lock(): users_cache.pop(login_hash)
 
         logger.info(f"Removed {result} user")
         return {'response': f"Пользователь {login} удален.", 'login': login}
@@ -488,7 +494,7 @@ async def session_state(login_hash, response, cards_response, card_number=None):
                     date=new_time.strftime("%Y-%m-%d %H:%M:%S"),
                     session="sleep")
 
-                async with LOCK:
+                async with _get_lock():
                     if login_hash in users_cache:
                         users_cache[login_hash]['date'] = new_time.strftime("%Y-%m-%d %H:%M:%S")
                         users_cache[login_hash]['session'] = "sleep"
@@ -500,12 +506,12 @@ async def session_state(login_hash, response, cards_response, card_number=None):
                 card_number and users_cache[login_hash]['session'] != "verified"):
 
                 result = await ekv_db.update_user(login_hash, session="verified")
-                async with LOCK: users_cache[login_hash]['session'] = "verified"
+                async with _get_lock(): users_cache[login_hash]['session'] = "verified"
                 raise AuthenticationError("No items in 'items' of cards response. "
                     f"{response['result_text']}")
 
     result = await ekv_db.update_user(login_hash, session="unverified")
-    async with LOCK: users_cache[login_hash]['session'] = "unverified"
+    async with _get_lock(): users_cache[login_hash]['session'] = "unverified"
     return False
 
 
@@ -531,7 +537,7 @@ async def fetch_cards(login_hash: str, chat_ids: list[int], cookies: dict[str, s
                 new_date += timedelta(days=1)
 
             result = await ekv_db.update_user(login_hash, date=new_date.strftime("%Y-%m-%d %H:%M:%S"))
-            async with LOCK:
+            async with _get_lock():
                 if login_hash in users_cache:
                     users_cache[login_hash]['date'] = new_date.strftime("%Y-%m-%d %H:%M:%S")
                     users_cache[login_hash]['session'] = 'sleep'
@@ -541,7 +547,7 @@ async def fetch_cards(login_hash: str, chat_ids: list[int], cookies: dict[str, s
 
     elif not card_number:
         result = await ekv_db.update_user(login_hash, date="")
-        async with LOCK:
+        async with _get_lock():
             if login_hash in users_cache:
                 users_cache[login_hash]['date'] = None
 
@@ -659,7 +665,7 @@ async def fetch_func(fetch_function: Callable) -> dict[int, dict]:
 
     tasks = []
     now = datetime.now()
-    async with LOCK: users = list(users_cache.items())
+    async with _get_lock(): users = list(users_cache.items())
 
     for login_hash, user_data in users:
         if (not user_data.get("date") or
@@ -769,7 +775,7 @@ async def main():
         asyncio.create_task(message_worker(message_queue))
         asyncio.create_task(ekv_api.manager(_LOAD_FACTOR))
 
-        async with LOCK: users_cache = await ekv_db.get_user()
+        async with _get_lock(): users_cache = await ekv_db.get_user()
         await asyncio.sleep(0.5)
 
         asyncio.create_task(main_loop())

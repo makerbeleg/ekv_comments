@@ -26,7 +26,7 @@ _SLOW_THRESHOLD = float(os.getenv("SLOW_THRESHOLD", 1.0)) #seconds
 _ERROR_THRESHOLD_MULTIPLIER = int(os.getenv("ERROR_THRESHOLD_MULTIPLIER", 2))
 _CYCLE = int(os.getenv("CYCLE", 300)) #seconds
 
-_error_lock = asyncio.Lock()
+_error_lock = None
 _error_counter, _pause_until = 0, 0
 
 _bucket_tokens, _bucket_refill_time = 0.0, 0.0
@@ -43,9 +43,17 @@ class APIPausedError(Exception): pass
 def api_paused(): return _pause_until > monotonic()
 
 
+
+def _get_lock():
+    global _error_lock
+    _error_lock = _error_lock or asyncio.Lock()
+    return _error_lock
+
+
+
 async def reset_circuit_breaker():
     global _error_counter
-    async with _error_lock: _error_counter = 0
+    async with _get_lock(): _error_counter = 0
     return True if _error_counter == 0 else False
 
 
@@ -115,7 +123,7 @@ async def _leaky_bucket():
 
     while True:
         now = monotonic()
-        async with _error_lock:
+        async with _get_lock():
             if _bucket_refill_time == 0: _bucket_refill_time = now
 
             elapsed = now - _bucket_refill_time
@@ -160,7 +168,7 @@ def _circuit_breaker(func):
             response = await func(dest, payload, cookies)
 
         except Exception as error:
-            async with _error_lock: _error_counter = _error_counter + 1
+            async with _get_lock(): _error_counter = _error_counter + 1
             logger.info(f"Error count increased to {_error_counter}")
             if _error_counter >= _ERROR_THRESHOLD:
                 _pause_until = monotonic() + _API_PAUSE_DURATION
@@ -174,14 +182,14 @@ def _circuit_breaker(func):
         else:
             elapsed = response.elapsed.total_seconds()
             if elapsed > _SLOW_THRESHOLD and payload['method'] == "getCards":
-                async with _error_lock: _error_counter = _error_counter + 1
+                async with _get_lock(): _error_counter = _error_counter + 1
                 logger.info(f"Error count increased to {_error_counter}")
                 if _error_counter >= _ERROR_THRESHOLD:
                     _pause_until = monotonic() + _API_PAUSE_DURATION
                     logger.error(f"Error threshold {_ERROR_THRESHOLD} reached. Paused for {_API_PAUSE_DURATION}s")
 
             elif _error_counter > 0:
-                async with _error_lock: _error_counter = _error_counter - 1
+                async with _get_lock(): _error_counter = _error_counter - 1
                 logger.info(f"Error count decreased to {_error_counter}")
 
             return response

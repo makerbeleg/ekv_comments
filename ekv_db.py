@@ -32,15 +32,22 @@ CREATE TABLE IF NOT EXISTS reprimands (
 """
 
 _writer = None
-_db_lock = asyncio.Lock()
+_db_lock = None
+
+
+def _get_db_lock():
+    global _db_lock
+    _db_lock = _db_lock or asyncio.Lock()
+    return _db_lock
 
 
 @asynccontextmanager
 async def _db_connection(*, write=False):
     global _writer
+    lock = _get_db_lock()
 
     if _writer is None:
-        async with _db_lock:
+        async with lock:
             if _writer is None:
                 _writer = await aiosqlite.connect(EKV_DB)
                 _writer.row_factory = aiosqlite.Row
@@ -54,7 +61,7 @@ async def _db_connection(*, write=False):
             yield reader
         return
 
-    async with _db_lock:
+    async with lock:
         try:
             yield _writer
             await _writer.commit()
@@ -220,7 +227,7 @@ async def cleanup(card_number=None):
 async def close_database():
     global _writer
 
-    async with _db_lock:
+    async with _get_db_lock:
         if _writer:
             await _writer.close()
             logger.info("DB connection was closed")
